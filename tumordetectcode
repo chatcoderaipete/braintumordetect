@@ -1,0 +1,75 @@
+mport tkinter as tk
+from tkinterdnd2 import DND_FILES, TkinterDnD
+import torch
+from torchvision import models, transforms
+from PIL import Image
+import os
+
+# Define the device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Model loading function
+def load_model(model_path, num_classes):
+    model = models.resnet50()  # Initialize the model architecture
+    model.fc = torch.nn.Linear(model.fc.in_features, num_classes)  # Adjust the fully connected layer
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model = model.to(device)
+    model.eval()  # Set the model to evaluation mode
+    return model
+
+# Image preprocessing function
+def preprocess_image(image_path):
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    image = Image.open(image_path).convert("RGB")
+    image = transform(image).unsqueeze(0)  # Add batch dimension
+    return image.to(device)
+
+# Prediction function
+def predict(model, image_path, classes):
+    image = preprocess_image(image_path)
+    with torch.no_grad():
+        outputs = model(image)
+        _, predicted = torch.max(outputs, 1)
+        predicted_class = classes[predicted.item()]
+    return predicted_class
+
+# Setting up the GUI
+def setup_gui(model, classes):
+    root = TkinterDnD.Tk()
+    root.title('Brain Tumor Classifier')
+
+    # Function to handle file drop
+    def on_drop(event):
+        image_path = event.data
+        if os.path.exists(image_path):
+            predicted_class = predict(model, image_path, classes)
+            result_var.set(f"Predicted class: {predicted_class}")
+        else:
+            result_var.set("File does not exist. Please try again.")
+
+    tk.Label(root, text="Drag and drop an image here:").pack(pady=10)
+    drop_frame = tk.Text(root, width=60, height=4, wrap="word")
+    drop_frame.pack(padx=10, pady=10)
+    drop_frame.drop_target_register(DND_FILES)
+    drop_frame.dnd_bind('<<Drop>>', on_drop)
+
+    result_var = tk.StringVar()
+    result_label = tk.Label(root, textvariable=result_var, fg="blue")
+    result_label.pack(pady=10)
+
+    # Close button
+    close_button = tk.Button(root, text="Close", command=root.destroy)
+    close_button.pack(pady=10)
+
+    return root
+
+classes = ['glioma_tumor', 'meningioma_tumor', 'no_tumor', 'pituitary_tumor']
+model_path = "C:/Users/pete/Documents/datafile/Saved_brainmodel/brain_tumor_model_fold_1.pth"  # Update this path
+model = load_model(model_path, len(classes))
+
+root = setup_gui(model, classes)
+root.mainloop()
